@@ -1,61 +1,111 @@
 services:
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:10.3.1  # Use a specific version
     ports:
       - "3000:3000"
     volumes:
+      - grafana-data:/var/lib/grafana
       - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
     environment:
-      - GF_AUTH_ANONYMOUS_ENABLED=true
-      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      # Disable anonymous access
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      # Enable authentication
+      - GF_AUTH_BASIC_ENABLED=true
+      # Configure session security
+      - GF_SERVER_PROTOCOL=http
+      - GF_SERVER_COOKIE_SECURE=true
+      - GF_SERVER_COOKIE_SAMESITE=strict
+      # Limit login attempts
+      - GF_AUTH_BASIC_LOGIN_ATTEMPTS=5
+      - GF_AUTH_BASIC_LOGIN_ATTEMPT_LOCKOUT_TIME=5
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
     networks:
-      - lgtm-network
+      - observability-network
+    restart: unless-stopped
 
   loki:
-    image: grafana/loki:latest
+    image: grafana/loki:2.9.2
     ports:
       - "3100:3100"
     volumes:
       - ./loki-config.yaml:/etc/loki/config.yaml
       - loki-data:/loki
-    command: -config.file=/etc/loki/config.yaml
+    command: 
+      - -config.file=/etc/loki/config.yaml
+      - -log.level=warn
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
     networks:
-      - lgtm-network
+      - observability-network
+    restart: unless-stopped
 
   promtail:
-    image: grafana/promtail:latest
+    image: grafana/promtail:2.9.2
     volumes:
       - ./promtail-config.yaml:/etc/promtail/config.yaml
       - /var/log:/var/log
-    command: -config.file=/etc/promtail/config.yaml
+      # Limit log collection to specific paths
+      - /var/log/your-app:/var/log/your-app
+    command: 
+      - -config.file=/etc/promtail/config.yaml
+      - -log.level=warn
+    deploy:
+      mode: global  # Ensures one container per node
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
     networks:
-      - lgtm-network
+      - observability-network
+    restart: unless-stopped
 
   tempo:
-    image: grafana/tempo:latest
-    command: [ "-config.file=/etc/tempo/tempo.yaml" ]
+    image: grafana/tempo:2.3.1
+    command: 
+      - -config.file=/etc/tempo/tempo.yaml
     volumes:
       - ./tempo-config.yaml:/etc/tempo/tempo.yaml
       - tempo-data:/data
     ports:
       - "3200:3200"   # Tempo Query
       - "4317:4317"   # OTLP gRPC
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
     networks:
-      - lgtm-network
+      - observability-network
+    restart: unless-stopped
 
   mimir:
-    image: grafana/mimir:latest
-    command: [ "-config.file=/etc/mimir/config.yaml" ]
+    image: grafana/mimir:2.10.3
+    command: 
+      - -config.file=/etc/mimir/config.yaml
     volumes:
       - ./mimir-config.yaml:/etc/mimir/config.yaml
-      - mimir-data:/data  # Persistent storage for Mimir
+      - mimir-data:/data
     ports:
-      - "8080:8080"  # Mimir API port
+      - "8080:8080"
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
     networks:
-      - lgtm-network
+      - observability-network
+    restart: unless-stopped
 
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v2.50.1
     volumes:
       - ./prometheus.yaml:/etc/prometheus/prometheus.yaml
       - prometheus-data:/prometheus
@@ -63,17 +113,36 @@ services:
       - --config.file=/etc/prometheus/prometheus.yaml
       - --storage.tsdb.path=/prometheus
       - --web.enable-lifecycle
+      - --web.enable-admin-api
+      # Retention: keep 15 days of data, 512MB max
+      - --storage.tsdb.retention.time=15d
+      - --storage.tsdb.retention.size=512MB
     ports:
       - "9090:9090"
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
     networks:
-      - lgtm-network
+      - observability-network
+    restart: unless-stopped
 
 volumes:
-  mimir-data:
-  prometheus-data:
-  tempo-data:
+  grafana-data:
+    driver: local
   loki-data:
+    driver: local
+  tempo-data:
+    driver: local
+  mimir-data:
+    driver: local
+  prometheus-data:
+    driver: local
 
 networks:
-  lgtm-network:
+  observability-network:
     driver: bridge
+    driver_opts:
+      com.docker.network.bridge.default_bridge: "false"
+      com.docker.network.bridge.enable_ip_masquerade: "true"
