@@ -61,7 +61,7 @@ compactor:
   compaction_interval: 5m
   delete_request_store: filesystem
   retention_enabled: true
-  retention_delete_delay: 2h
+  retention_delete_delay: 48h
   retention_delete_worker_count: 150
 
 analytics:
