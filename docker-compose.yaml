@@ -1,4 +1,25 @@
 services:
+  otel-collector:
+      image: otel/opentelemetry-collector-contrib:0.109.0 
+      command: ["--config=/etc/otel-collector-config.yaml"]
+      volumes:
+        - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+      ports:
+        - "4317:4317"  # OTLP gRPC (for API to send data)
+        - "4318:4318"  # OTLP HTTP (alternative)
+        - "8889:8889"  # Prometheus exporter
+      depends_on:
+        - loki
+        - tempo
+        - prometheus
+      deploy:
+        resources:
+          limits:
+            cpus: '1'
+            memory: 512M
+      networks:
+        - observability-network
+      restart: unless-stopped
   grafana:
     image: grafana/grafana:10.3.1  # Use a specific version
     ports:
@@ -76,30 +97,11 @@ services:
       - tempo-data:/data
     ports:
       - "3200:3200"   # Tempo Query
-      - "4317:4317"   # OTLP gRPC
     deploy:
       resources:
         limits:
           cpus: '2'
           memory: 1G
-    networks:
-      - observability-network
-    restart: unless-stopped
-
-  mimir:
-    image: grafana/mimir:2.10.3
-    command: 
-      - -config.file=/etc/mimir/config.yaml
-    volumes:
-      - ./mimir-config.yaml:/etc/mimir/config.yaml
-      - mimir-data:/data
-    ports:
-      - "8080:8080"
-    deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 2G
     networks:
       - observability-network
     restart: unless-stopped
@@ -134,8 +136,6 @@ volumes:
   loki-data:
     driver: local
   tempo-data:
-    driver: local
-  mimir-data:
     driver: local
   prometheus-data:
     driver: local

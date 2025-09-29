@@ -19,10 +19,8 @@ datasources:
     apiVersion: 1
     uid: tempo
 
-  - name: Mimir
+  - name: Prometheus
     type: prometheus
     access: proxy
-    url: http://mimir:8080/prometheus
+    url: http://prometheus:9090
     isDefault: true
-    version: 1
-    editable: true
